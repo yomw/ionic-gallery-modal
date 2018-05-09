@@ -1,19 +1,21 @@
 import { Component, ViewChild, OnInit, ElementRef } from '@angular/core';
-import { DomSanitizer, SafeStyle } from '@angular/platform-browser';
+import { DomSanitizer } from '@angular/platform-browser';
 import { ViewController, NavParams, Slides, Platform } from 'ionic-angular';
 import { Photo } from '../interfaces/photo-interface';
 import { Subject } from 'rxjs/Subject';
+import {File} from '@ionic-native/file';
+import { ToastController } from 'ionic-angular';
 
+declare let cordova:any;
 @Component({
     selector: 'gallery-modal',
     templateUrl: './gallery-modal.html',
     styleUrls: ['./gallery-modal.scss'],
 })
+
 export class GalleryModal implements OnInit {
     @ViewChild('slider') slider: Slides;
-
     private initialImage: any;
-
     public photos: Photo[];
     private sliderDisabled: boolean = false;
     private initialSlide: number = 0;
@@ -26,7 +28,6 @@ export class GalleryModal implements OnInit {
     private panUpDownRatio: number = 0;
     private panUpDownDeltaY: number = 0;
     private dismissed: boolean = false;
-
     private width: number = 0;
     private height: number = 0;
 
@@ -40,9 +41,10 @@ export class GalleryModal implements OnInit {
     private transitionDuration: string = '200ms';
     private transitionTimingFunction: string = 'cubic-bezier(0.33, 0.66, 0.66, 1)';
 
-    constructor(private viewCtrl: ViewController, params: NavParams, private element: ElementRef, private platform: Platform, private domSanitizer: DomSanitizer) {
+    constructor(private viewCtrl: ViewController, params: NavParams, private element: ElementRef, private platform: Platform, private domSanitizer: DomSanitizer,private file:File,private toastCtrl:ToastController) {
         this.photos = params.get('photos') || [];
         this.closeIcon = params.get('closeIcon') || 'arrow-back';
+        this.downloadIcon = params.get('downloadIcon') || 'download';
         this.initialSlide = params.get('initialSlide') || 0;
 
         this.initialImage = this.photos[this.initialSlide] || {};
@@ -52,16 +54,75 @@ export class GalleryModal implements OnInit {
         // call resize on init
         this.resize({});
     }
-
     /**
      * Closes the modal (when user click on CLOSE)
      */
     public dismiss() {
         this.viewCtrl.dismiss();
     }
-
     public download(){
+        let currentSlide = this.slider.getActiveIndex();
+        let allImgs = this.photos;
+        let imgToDownload = allImgs[currentSlide];
+        if(imgToDownload && imgToDownload.downloadable){
+            let fileName = imgToDownload.name;
+            let imageLocation = imgToDownload.url;
+            let root = '';
+            if(this.platform.is('ios')){
+                root = cordova.file.documentsDirectory;
+            }else if(this.platform.is('android')){
+                root = cordova.file.externalRootDirectory;
+            }
+            let album = imgToDownload.album;
+            this.file.checkDir(root,album).then(()=>{
+                let xhr = new XMLHttpRequest();
+                xhr.responseType = 'blob';
+                xhr.onload = (event)=>{
+                    let blob = xhr.response;
+                    console.log(blob);
+                    this.file.writeFile(root+album,fileName,blob).then(success=>{
+                        console.log(success);
+                        this.showToast('Saved');
+                    }).catch(error=>{
+                        console.error(error);
+                        this.showToast('Failed to save');
+                    })
+                };
+                xhr.open('GET', imageLocation);
+                xhr.send();
+            }).catch(error=> {
+                console.log("Directory not found, creating")
+                this.file.createDir(root,album,false).then(()=>{
+                    let xhr = new XMLHttpRequest();
+                    xhr.responseType = 'blob';
+                    xhr.onload = (event)=>{
+                        let blob = xhr.response;
+                        console.log(blob);
+                        this.file.writeFile(root+album,fileName,blob).then(success=>{
+                            console.log(success);
+                            this.showToast('Saved');
+                        }).catch(error=>{
+                            console.error(error);
+                            this.showToast('Failed to save');
+                        })
+                    };
+                    xhr.open('GET', imageLocation);
+                    xhr.send();
 
+                }).catch(function(error) {
+                    console.log(error);
+                    this.showToast('Failed to create album');
+                });
+            });
+        }
+    }
+
+    private showToast(msg){
+        this.toastCtrl.create({
+            message: msg,
+            duration: 3000,
+            position: 'bottom'
+        }).present();
     }
 
     private resize(event) {
@@ -162,7 +223,6 @@ export class GalleryModal implements OnInit {
         delete this.modalStyle.transitionDuration;
         delete this.modalStyle.transitionTimingFunction;
     }
-
     /**
      * Called when the user stopped panning up/down
      *

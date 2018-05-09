@@ -8,7 +8,7 @@
         <ion-icon name="{{ closeIcon }}"></ion-icon>
     </button>
 
-    <button ion-button icon-only (click)="download()">
+    <button *ngIf="photos[currentSlide].downloadable" ion-button icon-only (click)="download()" class="download-button">
         <ion-icon name="{{ downloadIcon }}"></ion-icon>
     </button>
 
